@@ -92,12 +92,12 @@ class DCGAN(object):
 
         # In: dim x dim x depth
         # Out: 2*dim x 2*dim x depth/2
-        self.G.add(UpSampling2D())
+        self.G.add(UpSampling2D(data_format='channels_first'))
         self.G.add(Conv2DTranspose(int(depth/2), (5, 5), padding='same',output_shape=(None, int(depth/2), 2*dim, 2*dim), data_format='channels_first'))
         self.G.add(BatchNormalization(momentum=0.9))
         self.G.add(Activation('relu'))
 
-        self.G.add(UpSampling2D())
+        self.G.add(UpSampling2D(data_format='channels_first'))
         self.G.add(Conv2DTranspose(int(depth/4), (5, 5), padding='same',output_shape=(None ,int(depth/4), 4*dim, 4*dim), data_format='channels_first'))
         self.G.add(BatchNormalization(momentum=0.9))
         self.G.add(Activation('relu'))
@@ -158,8 +158,6 @@ class MNIST_DCGAN(object):
                 self.x_train.shape[0], size=batch_size), :, :, :]
             noise = np.random.uniform(-1.0, 1.0, size=[batch_size, 100])
             images_fake = self.generator.predict(noise)
-            print('images_train shape:',images_train.shape)
-            print('images_fake shape:',images_fake.shape)
             x = np.concatenate((images_train, images_fake))
             y = np.ones([2*batch_size, 1])
             y[batch_size:, :] = 0
@@ -168,7 +166,7 @@ class MNIST_DCGAN(object):
             y = np.ones([batch_size, 1])
             noise = np.random.uniform(-1.0, 1.0, size=[batch_size, 100])
             a_loss = self.adversarial.train_on_batch(noise, y)
-            log_mesg = "%d: [D loss: %f, acc: %f]" % (i, d_loss[0], d_loss[1])
+            log_mesg = "step %d: [D loss: %f, acc: %f]" % (i, d_loss[0], d_loss[1])
             log_mesg = "%s  [A loss: %f, acc: %f]" % (log_mesg, a_loss[0], a_loss[1])
             print(log_mesg)
             if save_interval>0:
