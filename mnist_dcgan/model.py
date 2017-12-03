@@ -1,46 +1,29 @@
-'''
-DCGAN on MNIST using Keras
-keras 1.2.2
-'''
-import pandas as pd
-import numpy as np
-import time
+import warnings
+warnings.filterwarnings("ignore")
 
-from keras.models import Sequential
+import numpy as np
+import pandas as pd
+
 from keras.layers import Dense, Activation, Flatten, Reshape
 from keras.layers import Conv2D, UpSampling2D, Conv2DTranspose
 from keras.layers import LeakyReLU, Dropout
 from keras.layers import BatchNormalization
+from keras.models import Sequential
 from keras.optimizers import Adam, RMSprop
 
 import matplotlib.pyplot as plt
 
-# enable multi-CPU
 import theano
-theano.config.openmp = True
-
-class ElapsedTimer(object):
-    def __init__(self):
-        self.start_time = time.time()
-    def elapsed(self,sec):
-        if sec < 60:
-            return str(sec) + " sec"
-        elif sec < (60 * 60):
-            return str(sec / 60) + " min"
-        else:
-            return str(sec / (60 * 60)) + " hr"
-    def elapsed_time(self):
-        print("Elapsed: %s " % self.elapsed(time.time() - self.start_time) )
 
 class DCGAN(object):
     def __init__(self, img_rows=28, img_cols=28, channel=1):
-        self.img_rows = img_rows
-        self.img_cols = img_cols
-        self.channel = channel
         self.D = None   # discriminator
         self.G = None   # generator
         self.AM = None  # adversarial model
         self.DM = None  # discriminator model
+        self.img_rows = img_rows
+        self.img_cols = img_cols
+        self.channel = channel
 
     # (W-F+2P)/S+1
     def discriminator(self):
@@ -139,7 +122,7 @@ class MNIST_DCGAN(object):
         self.img_cols = 28
         self.channel = 1
 
-        self.x_train = pd.read_csv("./input/train.csv").values
+        self.x_train = pd.read_csv("../input/train.csv").values
         self.x_train = self.x_train[:, 1:].reshape(self.x_train.shape[0], 1, self.img_rows, self.img_cols).astype(np.float32)
 
         print('train shape:', self.x_train.shape)
@@ -202,8 +185,6 @@ class MNIST_DCGAN(object):
 
 if __name__ == '__main__':
     mnist_dcgan = MNIST_DCGAN()
-    timer = ElapsedTimer()
-    mnist_dcgan.train(train_steps=10000, batch_size=256, save_interval=500)
-    timer.elapsed_time()
+    mnist_dcgan.train(train_steps=10, batch_size=256, save_interval=500)
     mnist_dcgan.plot_images(fake=True)
     mnist_dcgan.plot_images(fake=False, save2file=True)
