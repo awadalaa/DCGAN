@@ -17,104 +17,100 @@ import theano
 
 class DCGAN(object):
     def __init__(self, img_rows=28, img_cols=28, channel=1):
-        self.D = None   # discriminator
-        self.G = None   # generator
-        self.AM = None  # adversarial model
-        self.DM = None  # discriminator model
+        self.discriminator = None
+        self.generator = None
+        self.adversarial_model = None
+        self.discriminator_model = None
         self.img_rows = img_rows
         self.img_cols = img_cols
         self.channel = channel
 
-    # (W-F+2P)/S+1
-    def discriminator(self):
-        if self.D:
-            return self.D
-        self.D = Sequential()
-        depth = 64
-        dropout = 0.4
-        # In: 1 x 28 x 28, depth=1
-        # Out: 1 x 10 x 10, depth=64
+    def discriminator_nn(self, depth=64, dropout=0.4):
+        if self.discriminator:
+            return self.discriminator
+        self.discriminator = Sequential()
+
         in_shape = (self.channel,self.img_rows, self.img_cols)
-        self.D.add(Conv2D(depth*1, (5, 5), strides=(2, 2), padding="same", input_shape=in_shape, data_format='channels_first'))
-        self.D.add(LeakyReLU(alpha=0.2))
-        self.D.add(Dropout(dropout))
+        self.discriminator.add(Conv2D(depth*1, (5, 5), strides=(2, 2), padding="same", input_shape=in_shape, data_format='channels_first'))
+        self.discriminator.add(LeakyReLU(alpha=0.2))
+        self.discriminator.add(Dropout(dropout))
 
-        self.D.add(Conv2D(depth*2, (5, 5), strides=(2,2), padding='same'))
-        self.D.add(LeakyReLU(alpha=0.2))
-        self.D.add(Dropout(dropout))
+        self.discriminator.add(Conv2D(depth*2, (5, 5), strides=(2,2), padding='same'))
+        self.discriminator.add(LeakyReLU(alpha=0.2))
+        self.discriminator.add(Dropout(dropout))
 
-        self.D.add(Conv2D(depth*4, (5, 5), strides=(2,2), padding='same'))
-        self.D.add(LeakyReLU(alpha=0.2))
-        self.D.add(Dropout(dropout))
+        self.discriminator.add(Conv2D(depth*4, (5, 5), strides=(2,2), padding='same'))
+        self.discriminator.add(LeakyReLU(alpha=0.2))
+        self.discriminator.add(Dropout(dropout))
 
-        self.D.add(Conv2D(depth*8, (5, 5), strides=(1,1), padding='same'))
-        self.D.add(LeakyReLU(alpha=0.2))
-        self.D.add(Dropout(dropout))
+        self.discriminator.add(Conv2D(depth*8, (5, 5), strides=(1,1), padding='same'))
+        self.discriminator.add(LeakyReLU(alpha=0.2))
+        self.discriminator.add(Dropout(dropout))
 
-        # Out: 1-dim probability
-        self.D.add(Flatten())
-        self.D.add(Dense(1))
-        self.D.add(Activation('sigmoid'))
-        self.D.summary()
-        return self.D
+        self.discriminator.add(Flatten())
+        self.discriminator.add(Dense(1))
+        self.discriminator.add(Activation('sigmoid'))
 
-    def generator(self):
-        if self.G:
-            return self.G
-        self.G = Sequential()
-        dropout = 0.4
+        self.discriminator.summary()
+
+        return self.discriminator
+
+    def generator_nn(self, dropout = 0.4, dim = 7):
+        if self.generator:
+            return self.generator
+        self.generator = Sequential()
+        
         depth = 64+64+64+64
-        dim = 7
         # In: 100
         # Out: dim x dim x depth
-        self.G.add(Dense(dim*dim*depth, input_dim=100))
-        self.G.add(BatchNormalization(momentum=0.9))
-        self.G.add(Activation('relu'))
-        self.G.add(Reshape((depth, dim, dim)))
-        self.G.add(Dropout(dropout))
+        self.generator.add(Dense(dim*dim*depth, input_dim=100))
+        self.generator.add(BatchNormalization(momentum=0.9))
+        self.generator.add(Activation('relu'))
+        self.generator.add(Reshape((depth, dim, dim)))
+        self.generator.add(Dropout(dropout))
 
         # In: dim x dim x depth
         # Out: 2*dim x 2*dim x depth/2
-        self.G.add(UpSampling2D(data_format='channels_first'))
-        self.G.add(Conv2DTranspose(int(depth/2), (5, 5), padding='same',output_shape=(None, int(depth/2), 2*dim, 2*dim), data_format='channels_first'))
-        self.G.add(BatchNormalization(momentum=0.9))
-        self.G.add(Activation('relu'))
+        self.generator.add(UpSampling2D(data_format='channels_first'))
+        self.generator.add(Conv2DTranspose(int(depth/2), (5, 5), padding='same',output_shape=(None, int(depth/2), 2*dim, 2*dim), data_format='channels_first'))
+        self.generator.add(BatchNormalization(momentum=0.9))
+        self.generator.add(Activation('relu'))
 
-        self.G.add(UpSampling2D(data_format='channels_first'))
-        self.G.add(Conv2DTranspose(int(depth/4), (5, 5), padding='same',output_shape=(None ,int(depth/4), 4*dim, 4*dim), data_format='channels_first'))
-        self.G.add(BatchNormalization(momentum=0.9))
-        self.G.add(Activation('relu'))
+        self.generator.add(UpSampling2D(data_format='channels_first'))
+        self.generator.add(Conv2DTranspose(int(depth/4), (5, 5), padding='same',output_shape=(None ,int(depth/4), 4*dim, 4*dim), data_format='channels_first'))
+        self.generator.add(BatchNormalization(momentum=0.9))
+        self.generator.add(Activation('relu'))
 
-        self.G.add(Conv2DTranspose(int(depth/8), (5, 5), padding='same',output_shape=(None ,int(depth/8), 4*dim, 4*dim), data_format='channels_first'))
-        self.G.add(BatchNormalization(momentum=0.9))
-        self.G.add(Activation('relu'))
+        self.generator.add(Conv2DTranspose(int(depth/8), (5, 5), padding='same',output_shape=(None ,int(depth/8), 4*dim, 4*dim), data_format='channels_first'))
+        self.generator.add(BatchNormalization(momentum=0.9))
+        self.generator.add(Activation('relu'))
 
         # Out: 28 x 28 x 1 grayscale image [0.0,1.0] per pix
-        self.G.add(Conv2DTranspose(1, (5, 5), padding='same',output_shape=(None, 1, 4*dim, 4*dim), data_format='channels_first'))
-        self.G.add(Activation('sigmoid'))
-        self.G.summary()
-        return self.G
+        self.generator.add(Conv2DTranspose(1, (5, 5), padding='same',output_shape=(None, 1, 4*dim, 4*dim), data_format='channels_first'))
+        self.generator.add(Activation('sigmoid'))
+        self.generator.summary()
+        return self.generator
 
-    def discriminator_model(self):
-        if self.DM:
-            return self.DM
+    def get_discriminator_model(self):
+        if self.discriminator_model:
+            return self.discriminator_model
         optimizer = RMSprop(lr=0.0008, clipvalue=1.0, decay=6e-8)
-        self.DM = Sequential()
-        self.DM.add(self.discriminator())
-        self.DM.compile(loss='binary_crossentropy', optimizer=optimizer,\
+        self.discriminator_model = Sequential()
+        self.discriminator_model.add(self.discriminator_nn())
+        self.discriminator_model.compile(loss='binary_crossentropy', optimizer=optimizer,\
             metrics=['accuracy'])
-        return self.DM
+        return self.discriminator_model
 
-    def adversarial_model(self):
-        if self.AM:
-            return self.AM
+    def get_adversarial_model(self):
+        if self.adversarial_model:
+            return self.adversarial_model
         optimizer = RMSprop(lr=0.0004, clipvalue=1.0, decay=3e-8)
-        self.AM = Sequential()
-        self.AM.add(self.generator())
-        self.AM.add(self.discriminator())
-        self.AM.compile(loss='binary_crossentropy', optimizer=optimizer,\
+        self.adversarial_model = Sequential()
+        self.adversarial_model.add(self.generator_nn())
+        self.adversarial_model.add(self.discriminator_nn())
+        self.adversarial_model.compile(loss='binary_crossentropy', optimizer=optimizer,\
             metrics=['accuracy'])
-        return self.AM
+        return self.adversarial_model
 
 class MNIST_DCGAN(object):
     def __init__(self):
@@ -122,15 +118,15 @@ class MNIST_DCGAN(object):
         self.img_cols = 28
         self.channel = 1
 
-        self.x_train = pd.read_csv("../input/train.csv").values
+        self.x_train = pd.read_csv("./input/train.csv").values
         self.x_train = self.x_train[:, 1:].reshape(self.x_train.shape[0], 1, self.img_rows, self.img_cols).astype(np.float32)
 
         print('train shape:', self.x_train.shape)
 
         self.DCGAN = DCGAN()
-        self.discriminator =  self.DCGAN.discriminator_model()
-        self.adversarial = self.DCGAN.adversarial_model()
-        self.generator = self.DCGAN.generator()
+        self.discriminator =  self.DCGAN.get_discriminator_model()
+        self.adversarial = self.DCGAN.get_adversarial_model()
+        self.generator = self.DCGAN.generator_nn()
 
     def train(self, train_steps=2000, batch_size=256, save_interval=0):
         noise_input = None
@@ -149,8 +145,7 @@ class MNIST_DCGAN(object):
             y = np.ones([batch_size, 1])
             noise = np.random.uniform(-1.0, 1.0, size=[batch_size, 100])
             a_loss = self.adversarial.train_on_batch(noise, y)
-            log_mesg = "step %d: [D loss: %f, acc: %f]" % (i, d_loss[0], d_loss[1])
-            log_mesg = "%s  [A loss: %f, acc: %f]" % (log_mesg, a_loss[0], a_loss[1])
+            log_mesg = "step %d: [D loss: %f, acc: %f] [A loss: %f, acc: %f]" % (i, d_loss[0], d_loss[1], a_loss[0], a_loss[1])
             print(log_mesg)
             if save_interval>0:
                 if (i+1)%save_interval==0:
@@ -185,6 +180,6 @@ class MNIST_DCGAN(object):
 
 if __name__ == '__main__':
     mnist_dcgan = MNIST_DCGAN()
-    mnist_dcgan.train(train_steps=10, batch_size=256, save_interval=500)
+    mnist_dcgan.train(train_steps=4, batch_size=256, save_interval=500)
     mnist_dcgan.plot_images(fake=True)
     mnist_dcgan.plot_images(fake=False, save2file=True)
