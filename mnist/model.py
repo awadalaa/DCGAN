@@ -52,7 +52,6 @@ class DCGAN(object):
         self.discriminator.add(Activation('sigmoid'))
 
         self.discriminator.summary()
-
         return self.discriminator
 
     def generator_nn(self, dropout = 0.4, dim = 7):
@@ -88,6 +87,7 @@ class DCGAN(object):
         # Out: 28 x 28 x 1 grayscale image [0.0,1.0] per pix
         self.generator.add(Conv2DTranspose(1, (5, 5), padding='same',output_shape=(None, 1, 4*dim, 4*dim), data_format='channels_first'))
         self.generator.add(Activation('sigmoid'))
+
         self.generator.summary()
         return self.generator
 
@@ -110,6 +110,8 @@ class DCGAN(object):
         self.adversarial_model.add(self.discriminator_nn())
         self.adversarial_model.compile(loss='binary_crossentropy', optimizer=optimizer,\
             metrics=['accuracy'])
+
+        self.adversarial_model.summary()
         return self.adversarial_model
 
 class MNIST_DCGAN(object):
@@ -120,6 +122,7 @@ class MNIST_DCGAN(object):
 
         self.x_train = pd.read_csv("./input/train.csv").values
         self.x_train = self.x_train[:, 1:].reshape(self.x_train.shape[0], 1, self.img_rows, self.img_cols).astype(np.float32)
+        self.x_train = self.preprocess_X(self.x_train)
 
         print('train shape:', self.x_train.shape)
 
@@ -128,6 +131,9 @@ class MNIST_DCGAN(object):
         self.adversarial = self.DCGAN.get_adversarial_model()
         self.generator = self.DCGAN.generator_nn()
 
+    def preprocess_X(self, X):
+        return (X.astype(np.float32) - 127.5)/127.5
+
     def train(self, train_steps=2000, batch_size=256, save_interval=0):
         noise_input = None
         if save_interval>0:
@@ -135,8 +141,10 @@ class MNIST_DCGAN(object):
         for i in range(train_steps):
             images_train = self.x_train[np.random.randint(0,
                 self.x_train.shape[0], size=batch_size), :, :, :]
+
             noise = np.random.uniform(-1.0, 1.0, size=[batch_size, 100])
             images_fake = self.generator.predict(noise)
+            print(images_train.shape, images_fake.shape)
             x = np.concatenate((images_train, images_fake))
             y = np.ones([2*batch_size, 1])
             y[batch_size:, :] = 0
@@ -180,6 +188,6 @@ class MNIST_DCGAN(object):
 
 if __name__ == '__main__':
     mnist_dcgan = MNIST_DCGAN()
-    mnist_dcgan.train(train_steps=4, batch_size=256, save_interval=500)
+    mnist_dcgan.train(train_steps=4, batch_size=256, save_interval=1)
     mnist_dcgan.plot_images(fake=True)
     mnist_dcgan.plot_images(fake=False, save2file=True)
