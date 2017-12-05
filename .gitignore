@@ -2,3 +2,4 @@
 .DS_Store
 env/
 mnist_dcgan/input/
+mnist/input/
