@@ -1,193 +1,192 @@
-import warnings
-warnings.filterwarnings("ignore")
+import tensorflow as tf
 
-import numpy as np
-import pandas as pd
-
-from keras.layers import Dense, Activation, Flatten, Reshape
-from keras.layers import Conv2D, UpSampling2D, Conv2DTranspose
-from keras.layers import LeakyReLU, Dropout
-from keras.layers import BatchNormalization
-from keras.models import Sequential
-from keras.optimizers import Adam, RMSprop
-
+import glob
+import imageio
 import matplotlib.pyplot as plt
-
-import theano
-
-class DCGAN(object):
-    def __init__(self, img_rows=28, img_cols=28, channel=1):
-        self.discriminator = None
-        self.generator = None
-        self.adversarial_model = None
-        self.discriminator_model = None
-        self.img_rows = img_rows
-        self.img_cols = img_cols
-        self.channel = channel
-
-    def discriminator_nn(self, depth=64, dropout=0.4):
-        if self.discriminator:
-            return self.discriminator
-        self.discriminator = Sequential()
-
-        in_shape = (self.channel,self.img_rows, self.img_cols)
-        self.discriminator.add(Conv2D(depth*1, (5, 5), strides=(2, 2), padding="same", input_shape=in_shape, data_format='channels_first'))
-        self.discriminator.add(LeakyReLU(alpha=0.2))
-        self.discriminator.add(Dropout(dropout))
-
-        self.discriminator.add(Conv2D(depth*2, (5, 5), strides=(2,2), padding='same'))
-        self.discriminator.add(LeakyReLU(alpha=0.2))
-        self.discriminator.add(Dropout(dropout))
-
-        self.discriminator.add(Conv2D(depth*4, (5, 5), strides=(2,2), padding='same'))
-        self.discriminator.add(LeakyReLU(alpha=0.2))
-        self.discriminator.add(Dropout(dropout))
-
-        self.discriminator.add(Conv2D(depth*8, (5, 5), strides=(1,1), padding='same'))
-        self.discriminator.add(LeakyReLU(alpha=0.2))
-        self.discriminator.add(Dropout(dropout))
-
-        self.discriminator.add(Flatten())
-        self.discriminator.add(Dense(1))
-        self.discriminator.add(Activation('sigmoid'))
-
-        self.discriminator.summary()
-        return self.discriminator
-
-    def generator_nn(self, dropout = 0.4, dim = 7):
-        if self.generator:
-            return self.generator
-        self.generator = Sequential()
-        
-        depth = 64+64+64+64
-        # In: 100
-        # Out: dim x dim x depth
-        self.generator.add(Dense(dim*dim*depth, input_dim=100))
-        self.generator.add(BatchNormalization(momentum=0.9))
-        self.generator.add(Activation('relu'))
-        self.generator.add(Reshape((depth, dim, dim)))
-        self.generator.add(Dropout(dropout))
-
-        # In: dim x dim x depth
-        # Out: 2*dim x 2*dim x depth/2
-        self.generator.add(UpSampling2D(data_format='channels_first'))
-        self.generator.add(Conv2DTranspose(int(depth/2), (5, 5), padding='same',output_shape=(None, int(depth/2), 2*dim, 2*dim), data_format='channels_first'))
-        self.generator.add(BatchNormalization(momentum=0.9))
-        self.generator.add(Activation('relu'))
-
-        self.generator.add(UpSampling2D(data_format='channels_first'))
-        self.generator.add(Conv2DTranspose(int(depth/4), (5, 5), padding='same',output_shape=(None ,int(depth/4), 4*dim, 4*dim), data_format='channels_first'))
-        self.generator.add(BatchNormalization(momentum=0.9))
-        self.generator.add(Activation('relu'))
-
-        self.generator.add(Conv2DTranspose(int(depth/8), (5, 5), padding='same',output_shape=(None ,int(depth/8), 4*dim, 4*dim), data_format='channels_first'))
-        self.generator.add(BatchNormalization(momentum=0.9))
-        self.generator.add(Activation('relu'))
-
-        # Out: 28 x 28 x 1 grayscale image [0.0,1.0] per pix
-        self.generator.add(Conv2DTranspose(1, (5, 5), padding='same',output_shape=(None, 1, 4*dim, 4*dim), data_format='channels_first'))
-        self.generator.add(Activation('sigmoid'))
-
-        self.generator.summary()
-        return self.generator
-
-    def get_discriminator_model(self):
-        if self.discriminator_model:
-            return self.discriminator_model
-        optimizer = RMSprop(lr=0.0008, clipvalue=1.0, decay=6e-8)
-        self.discriminator_model = Sequential()
-        self.discriminator_model.add(self.discriminator_nn())
-        self.discriminator_model.compile(loss='binary_crossentropy', optimizer=optimizer,\
-            metrics=['accuracy'])
-        return self.discriminator_model
-
-    def get_adversarial_model(self):
-        if self.adversarial_model:
-            return self.adversarial_model
-        optimizer = RMSprop(lr=0.0004, clipvalue=1.0, decay=3e-8)
-        self.adversarial_model = Sequential()
-        self.adversarial_model.add(self.generator_nn())
-        self.adversarial_model.add(self.discriminator_nn())
-        self.adversarial_model.compile(loss='binary_crossentropy', optimizer=optimizer,\
-            metrics=['accuracy'])
-
-        self.adversarial_model.summary()
-        return self.adversarial_model
+import numpy as np
+import os
+import PIL
+from tensorflow.keras import layers
+import time
 
 class MNIST_DCGAN(object):
-    def __init__(self):
-        self.img_rows = 28
-        self.img_cols = 28
-        self.channel = 1
+    def __init__(self, buffer_size = 60000, batch_size = 256, epochs = 50):
+        self.cross_entropy = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+        self.BUFFER_SIZE = BUFFER_SIZE
+        self.BATCH_SIZE = BATCH_SIZE
+        self.EPOCHS = EPOCHS
+        self.noise_dim = 100
+        self.num_examples_to_generate = 16
+        self.checkpoint_dir = './training_checkpoints'
+        self.checkpoint_prefix = os.path.join(self.checkpoint_dir, "ckpt")
 
-        self.x_train = pd.read_csv("./input/train.csv").values
-        self.x_train = self.x_train[:, 1:].reshape(self.x_train.shape[0], 1, self.img_rows, self.img_cols).astype(np.float32)
-        self.x_train = self.preprocess_X(self.x_train)
+        self.generator = self.make_generator_model()
+        self.generator_optimizer = tf.keras.optimizers.Adam(1e-4)
+        self.discriminator = self.make_discriminator_model()
+        self.discriminator_optimizer = tf.keras.optimizers.Adam(1e-4)
+        self.checkpoint = tf.train.Checkpoint(generator_optimizer=self.generator_optimizer,
+                                         discriminator_optimizer=self.discriminator_optimizer,
+                                         generator=self.generator,
+                                         discriminator=self.discriminator)
+        self.seed = tf.random.normal([self.num_examples_to_generate, self.noise_dim])
+        self.gen_train_loss =  tf.keras.metrics.Mean(name='gen_train_loss')
+        self.disc_train_loss = tf.keras.metrics.Mean(name='disc_train_loss')
 
-        print('train shape:', self.x_train.shape)
 
-        self.DCGAN = DCGAN()
-        self.discriminator =  self.DCGAN.get_discriminator_model()
-        self.adversarial = self.DCGAN.get_adversarial_model()
-        self.generator = self.DCGAN.generator_nn()
+    def make_generator_model(self):
+        model = tf.keras.Sequential()
+        model.add(layers.Dense(7 * 7 * 256, use_bias=False, input_shape=(100,)))
+        model.add(layers.BatchNormalization())
+        model.add(layers.LeakyReLU())
 
-    def preprocess_X(self, X):
-        return (X.astype(np.float32) - 127.5)/127.5
+        model.add(layers.Reshape((7, 7, 256)))
+        assert model.output_shape == (None, 7, 7, 256)  # Note: None is the batch size
 
-    def train(self, train_steps=2000, batch_size=256, save_interval=0):
-        noise_input = None
-        if save_interval>0:
-            noise_input = np.random.uniform(-1.0, 1.0, size=[16, 100])
-        for i in range(train_steps):
-            images_train = self.x_train[np.random.randint(0,
-                self.x_train.shape[0], size=batch_size), :, :, :]
+        model.add(layers.Conv2DTranspose(128, (5, 5), strides=(1, 1), padding='same', use_bias=False))
+        assert model.output_shape == (None, 7, 7, 128)
+        model.add(layers.BatchNormalization())
+        model.add(layers.LeakyReLU())
 
-            noise = np.random.uniform(-1.0, 1.0, size=[batch_size, 100])
-            images_fake = self.generator.predict(noise)
-            print(images_train.shape, images_fake.shape)
-            x = np.concatenate((images_train, images_fake))
-            y = np.ones([2*batch_size, 1])
-            y[batch_size:, :] = 0
-            d_loss = self.discriminator.train_on_batch(x, y)
+        model.add(layers.Conv2DTranspose(64, (5, 5), strides=(2, 2), padding='same', use_bias=False))
+        assert model.output_shape == (None, 14, 14, 64)
+        model.add(layers.BatchNormalization())
+        model.add(layers.LeakyReLU())
 
-            y = np.ones([batch_size, 1])
-            noise = np.random.uniform(-1.0, 1.0, size=[batch_size, 100])
-            a_loss = self.adversarial.train_on_batch(noise, y)
-            log_mesg = "step %d: [D loss: %f, acc: %f] [A loss: %f, acc: %f]" % (i, d_loss[0], d_loss[1], a_loss[0], a_loss[1])
-            print(log_mesg)
-            if save_interval>0:
-                if (i+1)%save_interval==0:
-                    self.plot_images(save2file=True, samples=noise_input.shape[0],\
-                        noise=noise_input, step=(i+1))
+        model.add(
+            layers.Conv2DTranspose(1, (5, 5), strides=(2, 2), padding='same', use_bias=False, activation='tanh'))
+        assert model.output_shape == (None, 28, 28, 1)
 
-    def plot_images(self, save2file=False, fake=True, samples=16, noise=None, step=0):
-        filename = 'mnist.png'
-        if fake:
-            if noise is None:
-                noise = np.random.uniform(-1.0, 1.0, size=[samples, 100])
-            else:
-                filename = "mnist_%d.png" % step
-            images = self.generator.predict(noise)
-        else:
-            i = np.random.randint(0, self.x_train.shape[0], samples)
-            images = self.x_train[i, :, :, :]
+        return model
 
-        plt.figure(figsize=(10,10))
-        for i in range(images.shape[0]):
-            plt.subplot(4, 4, i+1)
-            image = images[i, :, :, :]
-            image = np.reshape(image, [self.img_rows, self.img_cols])
-            plt.imshow(image, cmap='gray')
+    def make_discriminator_model(self):
+        model = tf.keras.Sequential()
+        model.add(layers.Conv2D(64, (5, 5), strides=(2, 2), padding='same',
+                                input_shape=[28, 28, 1]))
+        model.add(layers.LeakyReLU())
+        model.add(layers.Dropout(0.3))
+
+        model.add(layers.Conv2D(128, (5, 5), strides=(2, 2), padding='same'))
+        model.add(layers.LeakyReLU())
+        model.add(layers.Dropout(0.3))
+
+        model.add(layers.Flatten())
+        model.add(layers.Dense(1))
+
+        return model
+
+    def discriminator_loss(self, real_output, fake_output):
+        real_loss = self.cross_entropy(tf.ones_like(real_output), real_output)
+        fake_loss = self.cross_entropy(tf.zeros_like(fake_output), fake_output)
+        total_loss = real_loss + fake_loss
+        return total_loss
+
+    def generator_loss(self, fake_output):
+        return self.cross_entropy(tf.ones_like(fake_output), fake_output)
+
+    @tf.function
+    def train_step(self, images):
+        noise = tf.random.normal([self.BATCH_SIZE, self.noise_dim])
+
+        with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
+            generated_images = self.generator(noise, training=True)
+
+            real_output = self.discriminator(images, training=True)
+            fake_output = self.discriminator(generated_images, training=True)
+
+            gen_loss = self.generator_loss(fake_output)
+            disc_loss = self.discriminator_loss(real_output, fake_output)
+
+        gradients_of_generator = gen_tape.gradient(gen_loss, self.generator.trainable_variables)
+        gradients_of_discriminator = disc_tape.gradient(disc_loss, self.discriminator.trainable_variables)
+
+        self.generator_optimizer.apply_gradients(zip(gradients_of_generator, self.generator.trainable_variables))
+        self.discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, self.discriminator.trainable_variables))
+
+        self.gen_train_loss(gen_loss)
+        self.disc_train_loss(disc_loss)
+
+
+    def train(self, dataset, epochs):
+        for epoch in range(epochs):
+            # Reset the metrics at the start of the next epoch
+            self.gen_train_loss.reset_states()
+            self.disc_train_loss.reset_states()
+
+            start = time.time()
+
+            for image_batch in dataset:
+                self.train_step(image_batch)
+
+
+            # Produce images for the GIF as we go
+            self.generate_and_save_images(self.generator,
+                                     epoch + 1,
+                                     self.seed)
+
+            # Save the model every 15 epochs
+            if (epoch + 1) % 15 == 0:
+                self.checkpoint.save(file_prefix=self.checkpoint_prefix)
+        print(
+            f'Epoch {epoch + 1}, '
+            f'GLoss: {self.gen_train_loss.result()}, '
+            f'DLoss: {self.disc_train_loss.result()}, '
+        )
+
+        # Generate after the final epoch
+        self.generate_and_save_images(self.generator,
+                                 epochs,
+                                 self.seed)
+
+    def generate_and_save_images(self, model, epoch, test_input):
+        # Notice `training` is set to False.
+        # This is so all layers run in inference mode (batchnorm).
+        if not os.path.exists('images'):
+            os.makedirs('images')
+        predictions = model(test_input, training=False)
+
+        fig = plt.figure(figsize=(4, 4))
+        for i in range(predictions.shape[0]):
+            plt.subplot(4, 4, i + 1)
+            plt.imshow(predictions[i, :, :, 0] * 127.5 + 127.5, cmap='gray')
             plt.axis('off')
-        plt.tight_layout()
-        if save2file:
-            plt.savefig(filename)
-            plt.close('all')
-        else:
-            plt.show()
+        plt.savefig('images/image_at_epoch_{:04d}.png'.format(epoch))
+
+    # Display a single image using the epoch number
+    def display_image(epoch_no):
+        return PIL.Image.open('images/image_at_epoch_{:04d}.png'.format(epoch_no))
+
 
 if __name__ == '__main__':
-    mnist_dcgan = MNIST_DCGAN()
-    mnist_dcgan.train(train_steps=4, batch_size=256, save_interval=1)
-    mnist_dcgan.plot_images(fake=True)
-    mnist_dcgan.plot_images(fake=False, save2file=True)
+    print("Tensorflow Version:", tf.__version__)
+
+    BUFFER_SIZE = 60000
+    BATCH_SIZE = 128
+    EPOCHS = 2
+
+    # Get the dataset
+    (train_images, train_labels), (_, _) = tf.keras.datasets.mnist.load_data()
+    train_images = train_images.reshape(train_images.shape[0], 28, 28, 1).astype('float32')
+    train_images = (train_images - 127.5) / 127.5  # Normalize the images to [-1, 1]
+    train_dataset = tf.data.Dataset.from_tensor_slices(train_images).shuffle(BUFFER_SIZE).batch(BATCH_SIZE)
+
+    # Train the model
+    mnist_dcgan = MNIST_DCGAN(buffer_size = BUFFER_SIZE, batch_size = BATCH_SIZE, epochs = EPOCHS)
+    mnist_dcgan.train(train_dataset, epochs=2)
+
+    # Restore last checkpoint and display images
+    mnist_dcgan.checkpoint.restore(tf.train.latest_checkpoint(mnist_dcgan.checkpoint_dir))
+    # mnist_dcgan.display_image(mnist_dcgan.EPOCHS)
+
+    # Generate gif from each epoch
+    anim_file = 'dcgan.gif'
+    with imageio.get_writer(anim_file, mode='I') as writer:
+        filenames = glob.glob('images/image*.png')
+        filenames = sorted(filenames)
+        for filename in filenames:
+            image = imageio.imread(filename)
+            writer.append_data(image)
+        image = imageio.imread(filename)
+        writer.append_data(image)
+
+
+

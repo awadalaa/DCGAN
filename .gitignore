@@ -3,3 +3,7 @@
 env/
 mnist_dcgan/input/
 mnist/input/
+venv
+.idea
+images
+dcgan.gif
