@@ -12,9 +12,9 @@ import time
 class MNIST_DCGAN(object):
     def __init__(self, buffer_size = 60000, batch_size = 256, epochs = 50):
         self.cross_entropy = tf.keras.losses.BinaryCrossentropy(from_logits=True)
-        self.BUFFER_SIZE = BUFFER_SIZE
-        self.BATCH_SIZE = BATCH_SIZE
-        self.EPOCHS = EPOCHS
+        self.BUFFER_SIZE = buffer_size
+        self.BATCH_SIZE = batch_size
+        self.EPOCHS = epochs
         self.noise_dim = 100
         self.num_examples_to_generate = 16
         self.checkpoint_dir = './training_checkpoints'

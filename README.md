@@ -1,5 +1,17 @@
 # DCGAN
-This repository has implementations of deep convolutional generative adversarial networks.  These implementations are based on these papers
+
+DCGAN is a Deep Convolutional Generative Adversarial Network.
+The DCGAN is comprised of two neural networks pitted against each other.
+The _Generator_ neural net learns to create images that look real while the _Discriminator_
+learns to identify images that are fake. 
+
+Over time the images start to resemble the training input more and more. 
+The images begin as random noise, and increasingly resemble hand written digits over time. Below gif shows 100 epochs of training: 
+
+
+![gan_gif](mnist/dcgan.gif)
+
+#
 
 [1] Goodfellow, Ian, et al. "Generative adversarial nets." Advances in neural information processing systems. 2014.
 (Full paper: http://papers.nips.cc/paper/5423-generative-adversarial-nets.pdf)
