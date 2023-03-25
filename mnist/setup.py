@@ -2,7 +2,7 @@ from __future__ import absolute_import
 from setuptools import setup, find_packages
 
 REQUIRED_PACKAGES = [
-    "tensorflow==2.5.1",
+    "tensorflow==2.11.1",
     "imageio==2.9.0",
     "matplotlib==3.3.3"
 ]
